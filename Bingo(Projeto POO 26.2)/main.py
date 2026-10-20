@@ -1,20 +1,23 @@
 import random
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
+@dataclass
+class Marcacao:
+    jogador: str
+    numero: int
+    faltam: int
 
-Title = ("Bingo da Familia Salamanca: ")
-
-for i in Title:
-    print(i, end='')
-    time.sleep(0.2)
-
+@dataclass
+class Rodada:
+    numero: int
+    marcacoes: list[Marcacao]
 
 class Observer(ABC):
    @abstractmethod
-   def update(self, number: int) -> None:
+   def update(self, number: int) -> Marcacao | None:
        pass
-   time.sleep(2)
 
 
 class Sorteio():
@@ -32,19 +35,17 @@ class Sorteio():
         if observer in self.observador:
             self.observador.remove(observer)
 
-    def notificar(self, number: int) -> None:
-        for obs in list(self.observador):
-            obs.update(number)
-            time.sleep(5)
+    def notificar(self, number: int) -> list[Marcacao]:
+        resultados = (obs.update(number) for obs in list(self.observador))
+        return [r for r in resultados if r is not None]
 
-    def sortear(self) -> int | None:
+    def sortear(self) -> Rodada | None:
         if not self.balls:
             return None
         number = self.balls.pop()
         self.sorteados.append(number)
-        print(f"\nNumero sorteado: {number}")
         self.notificar(number)
-        return number
+        return Rodada(number, self.notificar(number))
 
 
 class Jogador(Observer):
@@ -52,40 +53,52 @@ class Jogador(Observer):
         self.name = name
         self.cartela = set(random.sample(range(1, max + 1), qtd_numbers))
         self.marcados: set[int] = set()
-        time.sleep(2)
-
 
     @property
     def venceu(self) -> bool:
         return self.marcados == self.cartela
-    time.sleep(2)
 
-    def update(self, number: int) -> None:
+    def update(self, number: int) -> Marcacao | None:
         if number in self.cartela:
             self.marcados.add(number)
             faltam = len(self.cartela) - len(self.marcados)
-            print(f"{self.name} marcou {number} (faltam {faltam})")
-            time.sleep(2)
+            return Marcacao(self.name, number, faltam)
 
 
 def jogar() -> None:
     sorteador = Sorteio()
-    jogadores = [Jogador("Hector Salamanca"), Jogador("Tuco Salamanca"), Jogador("Lalo Salamanca")]
-    time.sleep(2)
+    jogadores = [Jogador("Arlindo Lúcio da Silva"), Jogador("Maria da Costa Gonçalves"), Jogador("Geraldo Rodrigues de Souza")]
 
     for j in jogadores:
         sorteador.adicionar(j)
+
+    for c in "Bingo: ":
+        print(c, end='', flush=True)
+        time.sleep(0.2)
+    print()
+    time.sleep(1)
+
+    print("Cartelas dos jogadores: ")
+    time.sleep(1)
+    for j in jogadores:
         print(f"Cartela de {j.name}: {sorted(j.cartela)}")
-        time.sleep(2)
+        time.sleep(1)
 
     while True:
-        if sorteador.sortear() is None:
+        rodada = sorteador.sortear()
+        if rodada is None:
             print("Acabaram as bolas!")
             break
+
+        print(f"\nNumero sorteado: {rodada.numero}")
+        time.sleep(2)
+        for m in rodada.marcacoes:
+            print(f"{m.jogador} marcou {m.numero} faltam {m.faltam}")
+            time.sleep(2)
+
         vencedores = [j for j in jogadores if j.venceu]
         if vencedores:
             print("\nBINGO! Vencedor(es):", ", ".join(j.name for j in vencedores))
-            time.sleep(2)
             break
 
 
