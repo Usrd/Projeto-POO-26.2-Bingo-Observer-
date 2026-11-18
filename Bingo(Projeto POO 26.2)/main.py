@@ -3,55 +3,106 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-@dataclass
+
+@dataclass(frozen=True)
 class Marcacao:
     jogador: str
     numero: int
     faltam: int
 
-@dataclass
+
+@dataclass(frozen=True)
 class Rodada:
     numero: int
-    marcacoes: list[Marcacao]
+    marcacoes: tuple[Marcacao, ...]
+
 
 class Observer(ABC):
-   @abstractmethod
-   def update(self, number: int) -> Marcacao | None:
-       pass
+    """Contrato mínimo para quem deseja receber números sorteados."""
+
+    @abstractmethod
+    def update(self, number: int) -> Marcacao | None:
+        pass
 
 
-class Sorteio():
-    def __init__(self, max: int = 100):
-        self.observador:list[Observer] = []
-        self.balls = list(range(1, max + 1))
-        random.shuffle(self.balls)
-        self.sorteados: list[int] = []
+class FonteNumeros(ABC):
+    """Abstração de uma fonte que fornece números para o sorteio."""
 
-    def adicionar(self, observer:Observer) -> None:
-        if observer not in self.observador:
-            self.observador.append(observer)
+    @abstractmethod
+    def sortear_numero(self) -> int | None:
+        pass
 
-    def remover(self, observer:Observer) -> None:
-        if observer in self.observador:
-            self.observador.remove(observer)
 
-    def notificar(self, number: int) -> list[Marcacao]:
-        resultados = (obs.update(number) for obs in list(self.observador))
-        return [r for r in resultados if r is not None]
+class Urna(FonteNumeros):
+    """Responsável somente por embaralhar e fornecer os números."""
+
+    def __init__(self, quantidade: int = 100):
+        if quantidade < 1:
+            raise ValueError("A quantidade de números deve ser positiva.")
+
+        self._bolas = list(range(1, quantidade + 1))
+        random.shuffle(self._bolas)
+
+    def sortear_numero(self) -> int | None:
+        if not self._bolas:
+            return None
+        return self._bolas.pop()
+
+
+class Sorteio:
+    """Gerencia observadores e transforma cada número em uma rodada."""
+
+    def __init__(self, fonte: FonteNumeros):
+        self._fonte = fonte
+        self._observadores: list[Observer] = []
+
+    def adicionar(self, observador: Observer) -> None:
+        if observador not in self._observadores:
+            self._observadores.append(observador)
+
+    def remover(self, observador: Observer) -> None:
+        if observador in self._observadores:
+            self._observadores.remove(observador)
+
+    def _notificar(self, numero: int) -> tuple[Marcacao, ...]:
+        marcacoes = []
+        for observador in tuple(self._observadores):
+            marcacao = observador.update(numero)
+            if marcacao is not None:
+                marcacoes.append(marcacao)
+        return tuple(marcacoes)
 
     def sortear(self) -> Rodada | None:
-        if not self.balls:
+        numero = self._fonte.sortear_numero()
+        if numero is None:
             return None
-        number = self.balls.pop()
-        self.sorteados.append(number)
-        self.notificar(number)
-        return Rodada(number, self.notificar(number))
+
+        # Cada observador é notificado exatamente uma vez por número.
+        marcacoes = self._notificar(numero)
+        return Rodada(numero, marcacoes)
 
 
 class Jogador(Observer):
-    def __init__(self, name: str, qtd_numbers: int = 10, max: int = 75):
-        self.name = name
-        self.cartela = set(random.sample(range(1, max + 1), qtd_numbers))
+    """Mantém a cartela e o estado de marcação de um jogador."""
+
+    def __init__(
+        self,
+        nome: str,
+        quantidade_numeros: int = 10,
+        numero_maximo: int = 100,
+    ):
+        if numero_maximo < 1:
+            raise ValueError("O número máximo deve ser positivo.")
+        if not 1 <= quantidade_numeros <= numero_maximo:
+            raise ValueError(
+                "A quantidade de números da cartela deve estar entre "
+                "1 e o número máximo."
+            )
+
+        self.nome = nome
+        self.cartela = set(
+            random.sample(range(1, numero_maximo + 1), quantidade_numeros)
+        )
         self.marcados: set[int] = set()
 
     @property
@@ -59,49 +110,124 @@ class Jogador(Observer):
         return self.marcados == self.cartela
 
     def update(self, number: int) -> Marcacao | None:
-        if number in self.cartela:
-            self.marcados.add(number)
-            faltam = len(self.cartela) - len(self.marcados)
-            return Marcacao(self.name, number, faltam)
+        if number not in self.cartela or number in self.marcados:
+            return None
+
+        self.marcados.add(number)
+        faltam = len(self.cartela) - len(self.marcados)
+        return Marcacao(self.nome, number, faltam)
 
 
-def jogar() -> None:
-    sorteador = Sorteio()
-    jogadores = [Jogador("Arlindo Lúcio da Silva"), Jogador("Maria da Costa Gonçalves"), Jogador("Geraldo Rodrigues de Souza")]
+class Apresentador(ABC):
+    """Interface da apresentação do jogo, separada das regras."""
 
-    for j in jogadores:
-        sorteador.adicionar(j)
+    @abstractmethod
+    def mostrar_inicio(self) -> None:
+        pass
 
-    for c in "Bingo: ":
-        print(c, end='', flush=True)
-        time.sleep(0.2)
-    print()
-    time.sleep(1)
+    @abstractmethod
+    def mostrar_cartelas(self, jogadores: list[Jogador]) -> None:
+        pass
 
-    print("Cartelas dos jogadores: ")
-    time.sleep(1)
-    for j in jogadores:
-        print(f"Cartela de {j.name}: {sorted(j.cartela)}")
+    @abstractmethod
+    def mostrar_rodada(self, rodada: Rodada) -> None:
+        pass
+
+    @abstractmethod
+    def mostrar_vencedores(self, vencedores: list[Jogador]) -> None:
+        pass
+
+    @abstractmethod
+    def mostrar_fim(self) -> None:
+        pass
+
+
+class ApresentadorConsole(Apresentador):
+    """Implementa a apresentação do bingo no terminal."""
+
+    def mostrar_inicio(self) -> None:
+        for caractere in "Bingo: ":
+            print(caractere, end="", flush=True)
+            time.sleep(0.2)
+        print()
         time.sleep(1)
 
-    while True:
-        rodada = sorteador.sortear()
-        if rodada is None:
-            print("Acabaram as bolas!")
-            break
+    def mostrar_cartelas(self, jogadores: list[Jogador]) -> None:
+        print("Cartelas dos jogadores:")
+        time.sleep(1)
+        for jogador in jogadores:
+            print(f"Cartela de {jogador.nome}: {sorted(jogador.cartela)}")
+            time.sleep(1)
 
-        print(f"\nNumero sorteado: {rodada.numero}")
+    def mostrar_rodada(self, rodada: Rodada) -> None:
+        print(f"\nNúmero sorteado: {rodada.numero}")
         time.sleep(2)
-        for m in rodada.marcacoes:
-            print(f"{m.jogador} marcou {m.numero} faltam {m.faltam}")
+        for marcacao in rodada.marcacoes:
+            print(
+                f"{marcacao.jogador} marcou {marcacao.numero}; "
+                f"faltam {marcacao.faltam}"
+            )
             time.sleep(2)
 
-        vencedores = [j for j in jogadores if j.venceu]
-        if vencedores:
-            print("\nBINGO! Vencedor(es):", ", ".join(j.name for j in vencedores))
-            break
+    def mostrar_vencedores(self, vencedores: list[Jogador]) -> None:
+        nomes = ", ".join(jogador.nome for jogador in vencedores)
+        print(f"\nBINGO! Vencedor(es): {nomes}")
+
+    def mostrar_fim(self) -> None:
+        print("Acabaram as bolas!")
+
+
+class JogoBingo:
+    """Coordena o fluxo do jogo sem cuidar da apresentação ou da urna."""
+
+    def __init__(
+        self,
+        sorteio: Sorteio,
+        jogadores: list[Jogador],
+        apresentador: Apresentador,
+    ):
+        self._sorteio = sorteio
+        self._jogadores = jogadores
+        self._apresentador = apresentador
+
+        for jogador in self._jogadores:
+            self._sorteio.adicionar(jogador)
+
+    def jogar(self) -> None:
+        self._apresentador.mostrar_inicio()
+        self._apresentador.mostrar_cartelas(self._jogadores)
+
+        while True:
+            rodada = self._sorteio.sortear()
+            if rodada is None:
+                self._apresentador.mostrar_fim()
+                return
+
+            self._apresentador.mostrar_rodada(rodada)
+            vencedores = [
+                jogador for jogador in self._jogadores if jogador.venceu
+            ]
+
+            if vencedores:
+                self._apresentador.mostrar_vencedores(vencedores)
+                return
+
+
+def main() -> None:
+    numero_maximo = 100
+    jogadores = [
+        Jogador("Arlindo Lúcio da Silva", numero_maximo=numero_maximo),
+        Jogador("Maria da Costa Gonçalves", numero_maximo=numero_maximo),
+        Jogador("Geraldo Rodrigues de Souza", numero_maximo=numero_maximo),
+    ]
+
+    urna = Urna(numero_maximo)
+    sorteio = Sorteio(urna)
+    apresentador = ApresentadorConsole()
+
+    jogo = JogoBingo(sorteio, jogadores, apresentador)
+    jogo.jogar()
 
 
 if __name__ == "__main__":
-    jogar()
-
+    main()
