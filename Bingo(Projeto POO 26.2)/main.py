@@ -18,7 +18,6 @@ class Rodada:
 
 
 class Observer(ABC):
-    """Contrato mínimo para quem deseja receber números sorteados."""
 
     @abstractmethod
     def update(self, number: int) -> Marcacao | None:
@@ -26,7 +25,6 @@ class Observer(ABC):
 
 
 class FonteNumeros(ABC):
-    """Abstração de uma fonte que fornece números para o sorteio."""
 
     @abstractmethod
     def sortear_numero(self) -> int | None:
@@ -34,7 +32,6 @@ class FonteNumeros(ABC):
 
 
 class Urna(FonteNumeros):
-    """Responsável somente por embaralhar e fornecer os números."""
 
     def __init__(self, quantidade: int = 100):
         if quantidade < 1:
@@ -50,7 +47,6 @@ class Urna(FonteNumeros):
 
 
 class Sorteio:
-    """Gerencia observadores e transforma cada número em uma rodada."""
 
     def __init__(self, fonte: FonteNumeros):
         self._fonte = fonte
@@ -77,13 +73,11 @@ class Sorteio:
         if numero is None:
             return None
 
-        # Cada observador é notificado exatamente uma vez por número.
         marcacoes = self._notificar(numero)
         return Rodada(numero, marcacoes)
 
 
 class Jogador(Observer):
-    """Mantém a cartela e o estado de marcação de um jogador."""
 
     def __init__(
         self,
@@ -119,7 +113,6 @@ class Jogador(Observer):
 
 
 class Apresentador(ABC):
-    """Interface da apresentação do jogo, separada das regras."""
 
     @abstractmethod
     def mostrar_inicio(self) -> None:
@@ -143,7 +136,6 @@ class Apresentador(ABC):
 
 
 class ApresentadorConsole(Apresentador):
-    """Implementa a apresentação do bingo no terminal."""
 
     def mostrar_inicio(self) -> None:
         for caractere in "Bingo: ":
@@ -178,7 +170,6 @@ class ApresentadorConsole(Apresentador):
 
 
 class JogoBingo:
-    """Coordena o fluxo do jogo sem cuidar da apresentação ou da urna."""
 
     def __init__(
         self,
